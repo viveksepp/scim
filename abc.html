@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Campus Integrated Management System</title>
+  <title>Smart Campus Integrated Management System with Authentication & RBAC</title>
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -32,16 +32,16 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #94a3b8;
     }
-    @keyframes spin-slow {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
     }
-    .animate-spin-slow {
-      animation: spin-slow 8s linear infinite;
+    .animate-fade-in {
+      animation: fadeIn 0.25s ease-out forwards;
     }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-800 antialiased font-sans">
+<body class="bg-slate-50 text-slate-800 antialiased font-sans select-none">
   <div id="root"></div>
 
   <script type="text/babel">
@@ -59,7 +59,7 @@
       }, [name]);
 
       if (!svgContent) {
-        return <span class={`inline-block ${className}`} {...props}></span>;
+        return <span className={`inline-block ${className}`} {...props}></span>;
       }
 
       return (
@@ -71,7 +71,99 @@
       );
     };
 
-    // --- MOCK INITIAL DATA SETS ---
+    // --- DEMO ACCOUNTS & RBAC PERMISSIONS ---
+    const DEMO_ACCOUNTS = [
+      {
+        email: 'admin@campus.edu',
+        password: 'admin123password',
+        name: 'Dr. Sarah Connor',
+        role: 'Admin',
+        department: 'Central Administration',
+        avatarColor: 'bg-indigo-600',
+        badgeColor: 'bg-indigo-100 text-indigo-700 border-indigo-300'
+      },
+      {
+        email: 'faculty@campus.edu',
+        password: 'faculty123password',
+        name: 'Dr. Robert Smith',
+        role: 'Faculty',
+        department: 'Computer Science',
+        avatarColor: 'bg-rose-600',
+        badgeColor: 'bg-rose-100 text-rose-700 border-rose-300'
+      },
+      {
+        email: 'staff@campus.edu',
+        password: 'staff123password',
+        name: 'Michael Miller',
+        role: 'Staff',
+        department: 'Campus Operations',
+        avatarColor: 'bg-emerald-600',
+        badgeColor: 'bg-emerald-100 text-emerald-700 border-emerald-300'
+      },
+      {
+        email: 'student@campus.edu',
+        password: 'student123password',
+        name: 'Alex Johnson',
+        role: 'Student',
+        department: 'Computer Science',
+        avatarColor: 'bg-blue-600',
+        badgeColor: 'bg-blue-100 text-blue-700 border-blue-300'
+      }
+    ];
+
+    // Role-based capabilities configuration
+    const ROLE_PERMISSIONS = {
+      Admin: {
+        canAddStudent: true,
+        canDeleteStudent: true,
+        canAddFaculty: true,
+        canDeleteFaculty: true,
+        canAddCourse: true,
+        canManageResources: true,
+        canApproveBookings: true,
+        canEditActivities: true,
+        viewAllTabs: true,
+        description: 'Superuser - Full system administration & CRUD privileges'
+      },
+      Faculty: {
+        canAddStudent: false,
+        canDeleteStudent: false,
+        canAddFaculty: false,
+        canDeleteFaculty: false,
+        canAddCourse: true,
+        canManageResources: false,
+        canApproveBookings: false,
+        canEditActivities: true,
+        viewAllTabs: true,
+        description: 'Academic User - Manage courses, view students, submit resource bookings'
+      },
+      Staff: {
+        canAddStudent: false,
+        canDeleteStudent: false,
+        canAddFaculty: false,
+        canDeleteFaculty: false,
+        canAddCourse: false,
+        canManageResources: true,
+        canApproveBookings: true,
+        canEditActivities: true,
+        viewAllTabs: true,
+        description: 'Operations Staff - Manage facilities, schedule activities & approve bookings'
+      },
+      Student: {
+        canAddStudent: false,
+        canDeleteStudent: false,
+        canAddFaculty: false,
+        canDeleteFaculty: false,
+        canAddCourse: false,
+        canManageResources: false,
+        canApproveBookings: false,
+        canEditActivities: false,
+        viewAllTabs: false, // Hidden architecture/internal tabs if needed
+        description: 'Enrolled Student - View directory, course enrollments, request resource slots'
+      }
+    };
+
+    // --- INITIAL DATA SETS ---
     const initialStudents = [
       { id: 'STU001', name: 'Alex Johnson', email: 'alex.j@campus.edu', department: 'Computer Science', year: '3rd Year', gpa: '3.8', status: 'Active' },
       { id: 'STU002', name: 'Sophia Chen', email: 'sophia.c@campus.edu', department: 'Electrical Eng.', year: '2nd Year', gpa: '3.9', status: 'Active' },
@@ -105,228 +197,455 @@
     ];
 
     function App() {
-      // Navigation & Role State
-      const [currentRole, setCurrentRole] = useState('Admin'); // Admin, Faculty, Staff, Student
-      const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, students, faculty, courses, resources, activities, bookings, architecture
+      // Authenticated User & Session State
+      const [currentUser, setCurrentUser] = useState(null); // Null = Logged Out
+      const [loginEmail, setLoginEmail] = useState('');
+      const [loginPassword, setLoginPassword] = useState('');
+      const [authError, setAuthError] = useState('');
+
+      // Navigation Tab State
+      const [activeTab, setActiveTab] = useState('dashboard');
       
-      // Data State
+      // Dynamic Data Collection States
       const [students, setStudents] = useState(initialStudents);
       const [faculty, setFaculty] = useState(initialFaculty);
       const [courses, setCourses] = useState(initialCourses);
       const [resources, setResources] = useState(initialResources);
       const [activities, setActivities] = useState(initialActivities);
 
-      // Search & Filter States
+      // Search & Modal States
       const [searchQuery, setSearchQuery] = useState('');
+      const [modalType, setModalType] = useState(null); // 'addStudent', 'addFaculty', 'addCourse'
       
-      // Modal Handling
-      const [modalType, setModalType] = useState(null); // 'addStudent', 'addFaculty'
-      const [selectedResource, setSelectedResource] = useState(null);
-      
-      // Booking Form State
+      // Booking System State
       const [bookingDetails, setBookingDetails] = useState({ resourceId: '', user: '', date: '', timeSlot: '' });
       const [bookingStatusMsg, setBookingStatusMsg] = useState(null);
 
-      // Form input states
+      // Modal Form Models
       const [newStudent, setNewStudent] = useState({ name: '', email: '', department: 'Computer Science', year: '1st Year', gpa: '3.5', status: 'Active' });
       const [newFaculty, setNewFaculty] = useState({ name: '', email: '', department: 'Computer Science', designation: 'Assistant Professor', specialization: '' });
+      const [newCourse, setNewCourse] = useState({ id: '', title: '', faculty: 'Dr. Robert Smith', credits: 3, enrolled: 0, status: 'Active', assignments: 0 });
 
-      // Handle Add Student
+      // Permissions derived from current logged in user
+      const permissions = useMemo(() => {
+        if (!currentUser) return null;
+        return ROLE_PERMISSIONS[currentUser.role] || ROLE_PERMISSIONS['Student'];
+      }, [currentUser]);
+
+      // Login Handler
+      const handleLogin = (e) => {
+        e?.preventDefault();
+        setAuthError('');
+        const matchedAccount = DEMO_ACCOUNTS.find(
+          a => a.email.toLowerCase() === loginEmail.trim().toLowerCase()
+        );
+
+        if (!matchedAccount) {
+          setAuthError('Account not found. Please try one of the quick login credentials.');
+          return;
+        }
+
+        if (loginPassword && loginPassword.length < 4) {
+          setAuthError('Invalid password credentials.');
+          return;
+        }
+
+        // Auto prepopulate requester name in booking tool
+        setBookingDetails(prev => ({ ...prev, user: matchedAccount.name }));
+        setCurrentUser(matchedAccount);
+        setActiveTab('dashboard');
+        setLoginEmail('');
+        setLoginPassword('');
+      };
+
+      // Direct Quick Login Trigger
+      const handleQuickLogin = (demoAcc) => {
+        setAuthError('');
+        setBookingDetails(prev => ({ ...prev, user: demoAcc.name }));
+        setCurrentUser(demoAcc);
+        setActiveTab('dashboard');
+      };
+
+      // Logout Handler
+      const handleLogout = () => {
+        setCurrentUser(null);
+        setActiveTab('dashboard');
+        setSearchQuery('');
+      };
+
+      // CRUD Event Handlers
       const handleAddStudent = (e) => {
         e.preventDefault();
-        const created = {
-          ...newStudent,
-          id: `STU00${students.length + 1}`
-        };
+        if (!permissions?.canAddStudent) return;
+        const created = { ...newStudent, id: `STU00${students.length + 1}` };
         setStudents([...students, created]);
         setModalType(null);
         setNewStudent({ name: '', email: '', department: 'Computer Science', year: '1st Year', gpa: '3.5', status: 'Active' });
       };
 
-      // Handle Add Faculty
+      const handleDeleteStudent = (id) => {
+        if (!permissions?.canDeleteStudent) return;
+        setStudents(students.filter(s => s.id !== id));
+      };
+
       const handleAddFaculty = (e) => {
         e.preventDefault();
-        const created = {
-          ...newFaculty,
-          id: `FAC10${faculty.length + 1}`
-        };
+        if (!permissions?.canAddFaculty) return;
+        const created = { ...newFaculty, id: `FAC10${faculty.length + 1}` };
         setFaculty([...faculty, created]);
         setModalType(null);
         setNewFaculty({ name: '', email: '', department: 'Computer Science', designation: 'Assistant Professor', specialization: '' });
       };
 
-      // Handle Resource Booking Simulation
+      const handleDeleteFaculty = (id) => {
+        if (!permissions?.canDeleteFaculty) return;
+        setFaculty(faculty.filter(f => f.id !== id));
+      };
+
+      const handleAddCourse = (e) => {
+        e.preventDefault();
+        if (!permissions?.canAddCourse) return;
+        setCourses([...courses, newCourse]);
+        setModalType(null);
+        setNewCourse({ id: '', title: '', faculty: 'Dr. Robert Smith', credits: 3, enrolled: 0, status: 'Active', assignments: 0 });
+      };
+
+      // Booking Verification Logic
       const handleSimulateBooking = (e) => {
         e.preventDefault();
         const targetRes = resources.find(r => r.id === bookingDetails.resourceId);
         if (!targetRes) return;
 
         if (targetRes.status === 'Occupied' || targetRes.status === 'Maintenance') {
-          setBookingStatusMsg({ type: 'error', text: `Conflict Detected! ${targetRes.name} is currently ${targetRes.status.toLowerCase()}.` });
+          setBookingStatusMsg({ 
+            type: 'error', 
+            text: `Booking Declined: ${targetRes.name} is currently marked as ${targetRes.status}. System conflict logic prevented collision.` 
+          });
         } else {
-          // Simulate successful booking & state update
           setResources(resources.map(r => r.id === targetRes.id ? { ...r, status: 'Occupied' } : r));
-          setBookingStatusMsg({ type: 'success', text: `Success! Reserved ${targetRes.name} for ${bookingDetails.user || 'Requested User'}.` });
+          setBookingStatusMsg({ 
+            type: 'success', 
+            text: `Reservation Confirmed! Slot booked for ${bookingDetails.user || currentUser.name} (${currentUser.role}).` 
+          });
           setTimeout(() => {
-            setModalType(null);
             setBookingStatusMsg(null);
-          }, 1500);
+          }, 3000);
         }
       };
 
+      // Filtered data based on search bar
+      const filteredStudents = useMemo(() => {
+        return students.filter(s => 
+          s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          s.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          s.department.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }, [students, searchQuery]);
+
+      const filteredFaculty = useMemo(() => {
+        return faculty.filter(f => 
+          f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          f.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          f.specialization.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }, [faculty, searchQuery]);
+
+      // --- LOGIN VIEW (RENDERED WHEN NOT AUTHENTICATED) ---
+      if (!currentUser) {
+        return (
+          <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
+            {/* Background Decorative Accents */}
+            <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div className="w-full max-w-4xl bg-slate-800 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden grid grid-cols-1 md:grid-cols-12 z-10 animate-fade-in">
+              
+              {/* Left Panel - Branding & Architecture Info */}
+              <div className="md:col-span-5 bg-gradient-to-br from-indigo-900 via-slate-900 to-indigo-950 p-8 text-white flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-700/80">
+                <div>
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="p-3 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-600/40">
+                      <Icon name="layers" className="w-7 h-7" />
+                    </div>
+                    <div>
+                      <h1 className="text-xl font-bold tracking-tight text-white">SmartCampus</h1>
+                      <p className="text-xs text-indigo-300 font-medium">Authentication Gateway</p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed mb-6">
+                    Enterprise Java-backed Integrated Campus Platform featuring modular Role-Based Access Control (RBAC), multi-tier security, and real-time resource validation engine.
+                  </p>
+
+                  <div className="space-y-2.5">
+                    <div className="flex items-center space-x-2.5 text-xs text-slate-300">
+                      <Icon name="shield-check" className="w-4 h-4 text-emerald-400" />
+                      <span>Role-based UI feature toggle engine</span>
+                    </div>
+                    <div className="flex items-center space-x-2.5 text-xs text-slate-300">
+                      <Icon name="lock" className="w-4 h-4 text-indigo-400" />
+                      <span>Encrypted credentials authentication</span>
+                    </div>
+                    <div className="flex items-center space-x-2.5 text-xs text-slate-300">
+                      <Icon name="database" className="w-4 h-4 text-amber-400" />
+                      <span>Java Persistence & Collections store</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 pt-4 border-t border-slate-800 text-[11px] text-slate-400">
+                  Java Spring Security Spec • JDBC Session Manager
+                </div>
+              </div>
+
+              {/* Right Panel - Form & Quick Login Demo Tiers */}
+              <div className="md:col-span-7 p-8 bg-slate-800 flex flex-col justify-between space-y-6">
+                <div>
+                  <div className="mb-6">
+                    <h2 className="text-xl font-bold text-white">Account Sign In</h2>
+                    <p className="text-xs text-slate-400 mt-1">Select a demo role tier or enter registered account credentials.</p>
+                  </div>
+
+                  {authError && (
+                    <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-medium flex items-center gap-2">
+                      <Icon name="alert-circle" className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                      <span>{authError}</span>
+                    </div>
+                  )}
+
+                  {/* Standard Login Form */}
+                  <form onSubmit={handleLogin} className="space-y-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>
+                      <div className="relative">
+                        <Icon name="mail" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="email"
+                          placeholder="e.g. admin@campus.edu"
+                          value={loginEmail}
+                          onChange={(e) => setLoginEmail(e.target.value)}
+                          className="w-full pl-9 pr-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Security Password</label>
+                      <div className="relative">
+                        <Icon name="key" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="password"
+                          placeholder="••••••••••••"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          className="w-full pl-9 pr-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-lg transition-all shadow-lg shadow-indigo-600/30"
+                    >
+                      Sign In to System Portal
+                    </button>
+                  </form>
+                </div>
+
+                {/* Quick Account Switcher (One-Click Testing) */}
+                <div className="pt-4 border-t border-slate-700/60">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2.5">
+                    Quick Demo Role Select (One-Click)
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {DEMO_ACCOUNTS.map((acc) => (
+                      <button
+                        key={acc.role}
+                        onClick={() => handleQuickLogin(acc)}
+                        className="p-2.5 bg-slate-900/80 hover:bg-slate-700 border border-slate-700 rounded-xl text-left transition-all group flex items-center justify-between"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center space-x-1.5">
+                            <span className={`w-2 h-2 rounded-full ${acc.avatarColor}`}></span>
+                            <p className="text-xs font-bold text-white group-hover:text-indigo-300 transition-colors">{acc.role}</p>
+                          </div>
+                          <p className="text-[10px] text-slate-400 truncate mt-0.5">{acc.email}</p>
+                        </div>
+                        <Icon name="arrow-right" className="w-3.5 h-3.5 text-slate-500 group-hover:text-white transition-colors" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // --- MAIN APPLICATION INTERFACE (WHEN AUTHENTICATED) ---
       return (
         <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col md:flex-row">
           
           {/* SIDEBAR NAVIGATION */}
           <aside className="w-full md:w-72 bg-slate-900 text-slate-100 flex-shrink-0 flex flex-col justify-between border-r border-slate-800">
             <div>
-              {/* Logo Header */}
-              <div className="p-6 border-b border-slate-800 flex items-center space-x-3">
-                <div className="p-2.5 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-600/30">
-                  <Icon name="layers-3" className="w-6 h-6" />
-                </div>
-                <div>
-                  <h1 className="font-bold text-lg leading-tight text-white">SmartCampus</h1>
-                  <p className="text-xs text-slate-400 font-medium">Integrated Management</p>
+              {/* Header Logo */}
+              <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2.5 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-600/30">
+                    <Icon name="layers" className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h1 className="font-bold text-lg leading-tight text-white">SmartCampus</h1>
+                    <p className="text-xs text-slate-400 font-medium">Management System</p>
+                  </div>
                 </div>
               </div>
 
-              {/* User Role Selector Header */}
+              {/* Active Role Privilege Badge */}
               <div className="p-4 mx-4 my-4 bg-slate-800/80 rounded-xl border border-slate-700/60">
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Active Role Portal</label>
-                <div className="grid grid-cols-2 gap-1.5 bg-slate-900 p-1 rounded-lg border border-slate-700/50 text-xs font-medium">
-                  {['Admin', 'Staff', 'Faculty', 'Student'].map((role) => (
-                    <button
-                      key={role}
-                      onClick={() => setCurrentRole(role)}
-                      className={`py-1.5 px-2 rounded-md text-center transition-all ${
-                        currentRole === role 
-                          ? 'bg-indigo-600 text-white shadow-sm font-semibold' 
-                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                      }`}
-                    >
-                      {role}
-                    </button>
-                  ))}
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Active Privilege Tier</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${currentUser.badgeColor}`}>
+                    {currentUser.role}
+                  </span>
+                </div>
+                <p className="text-xs text-white font-bold truncate">{currentUser.name}</p>
+                <p className="text-[11px] text-slate-400 truncate">{currentUser.department}</p>
+                <div className="mt-2.5 pt-2 border-t border-slate-700/50 text-[10px] text-slate-400 flex items-center gap-1">
+                  <Icon name="shield" className="w-3 h-3 text-emerald-400" />
+                  <span className="truncate">{permissions.description}</span>
                 </div>
               </div>
 
-              {/* Main Navigation Menu */}
+              {/* Navigation Menu */}
               <nav className="px-3 space-y-1">
                 <div className="px-3 pb-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Core Modules</div>
                 
-                <button
-                  onClick={() => setActiveTab('dashboard')}
-                  className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    activeTab === 'dashboard' ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30' : 'text-slate-300 hover:bg-slate-800/60'
+                <button 
+                  onClick={() => setActiveTab('dashboard')} 
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'dashboard' ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30' : 'text-slate-300 hover:bg-slate-800'
                   }`}
                 >
                   <Icon name="activity" className="w-4 h-4" />
                   <span>Dashboard Overview</span>
                 </button>
 
-                <button
-                  onClick={() => setActiveTab('students')}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    activeTab === 'students' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'text-slate-300 hover:bg-slate-800/60'
+                <button 
+                  onClick={() => setActiveTab('students')} 
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'students' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'text-slate-300 hover:bg-slate-800'
                   }`}
                 >
                   <div className="flex items-center space-x-3">
                     <Icon name="users" className="w-4 h-4 text-blue-400" />
                     <span>Student Management</span>
                   </div>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{students.length}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{students.length}</span>
                 </button>
 
-                <button
-                  onClick={() => setActiveTab('faculty')}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    activeTab === 'faculty' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'text-slate-300 hover:bg-slate-800/60'
+                <button 
+                  onClick={() => setActiveTab('faculty')} 
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'faculty' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'text-slate-300 hover:bg-slate-800'
                   }`}
                 >
                   <div className="flex items-center space-x-3">
                     <Icon name="user-check" className="w-4 h-4 text-rose-400" />
                     <span>Faculty Management</span>
                   </div>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{faculty.length}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{faculty.length}</span>
                 </button>
 
-                <button
-                  onClick={() => setActiveTab('courses')}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    activeTab === 'courses' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-300 hover:bg-slate-800/60'
+                <button 
+                  onClick={() => setActiveTab('courses')} 
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'courses' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-300 hover:bg-slate-800'
                   }`}
                 >
                   <div className="flex items-center space-x-3">
                     <Icon name="book-open" className="w-4 h-4 text-amber-400" />
-                    <span>Course Management</span>
+                    <span>Course Curriculum</span>
                   </div>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{courses.length}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{courses.length}</span>
                 </button>
 
-                <button
-                  onClick={() => setActiveTab('resources')}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    activeTab === 'resources' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-300 hover:bg-slate-800/60'
+                <button 
+                  onClick={() => setActiveTab('resources')} 
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'resources' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-300 hover:bg-slate-800'
                   }`}
                 >
                   <div className="flex items-center space-x-3">
-                    <Icon name="flask-conical" className="w-4 h-4 text-emerald-400" />
-                    <span>Resource Management</span>
+                    <Icon name="box" className="w-4 h-4 text-emerald-400" />
+                    <span>Facilities & Resources</span>
                   </div>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{resources.length}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{resources.length}</span>
                 </button>
 
-                <button
-                  onClick={() => setActiveTab('activities')}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    activeTab === 'activities' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'text-slate-300 hover:bg-slate-800/60'
+                <button 
+                  onClick={() => setActiveTab('activities')} 
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'activities' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'text-slate-300 hover:bg-slate-800'
                   }`}
                 >
                   <div className="flex items-center space-x-3">
                     <Icon name="calendar" className="w-4 h-4 text-purple-400" />
-                    <span>Campus Activities</span>
+                    <span>Campus Events</span>
                   </div>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{activities.length}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{activities.length}</span>
                 </button>
 
-                <button
-                  onClick={() => setActiveTab('bookings')}
-                  className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    activeTab === 'bookings' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'text-slate-300 hover:bg-slate-800/60'
+                <button 
+                  onClick={() => setActiveTab('bookings')} 
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'bookings' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'text-slate-300 hover:bg-slate-800'
                   }`}
                 >
                   <Icon name="clock" className="w-4 h-4 text-orange-400" />
-                  <span>Resource Booking System</span>
+                  <span>Booking Console</span>
                 </button>
 
-                <div className="pt-4 px-3 pb-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Architecture</div>
-
-                <button
-                  onClick={() => setActiveTab('architecture')}
-                  className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    activeTab === 'architecture' ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40' : 'text-slate-300 hover:bg-slate-800/60'
-                  }`}
-                >
-                  <Icon name="code" className="w-4 h-4 text-indigo-400" />
-                  <span>Java Stack Blueprint</span>
-                </button>
+                {/* System Blueprint - Accessible for Admin, Faculty & Staff */}
+                {permissions.viewAllTabs && (
+                  <React.Fragment>
+                    <div className="pt-3 px-3 pb-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Architecture</div>
+                    <button 
+                      onClick={() => setActiveTab('architecture')} 
+                      className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                        activeTab === 'architecture' ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40' : 'text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <Icon name="code" className="w-4 h-4 text-indigo-400" />
+                      <span>Java Stack Blueprint</span>
+                    </button>
+                  </React.Fragment>
+                )}
               </nav>
             </div>
 
-            {/* User Info Footer */}
-            <div className="p-4 border-t border-slate-800 bg-slate-900/60">
+            {/* User Profile Bar with Logout Action */}
+            <div className="p-4 border-t border-slate-800 bg-slate-900/80">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white text-sm">
-                    {currentRole[0]}
+                  <div className={`w-9 h-9 rounded-full ${currentUser.avatarColor} flex items-center justify-center font-bold text-white text-sm shadow-md`}>
+                    {currentUser.name[0]}
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white leading-none">{currentRole} Mode</p>
-                    <p className="text-xs text-slate-400 mt-1">Access: Full Privileges</p>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-white truncate">{currentUser.name}</p>
+                    <p className="text-[10px] text-slate-400 truncate">{currentUser.email}</p>
                   </div>
                 </div>
-                <Icon name="shield" className="w-4 h-4 text-slate-500" />
+
+                <button 
+                  onClick={handleLogout}
+                  title="Logout Session"
+                  className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  <Icon name="log-out" className="w-4 h-4" />
+                </button>
               </div>
             </div>
           </aside>
@@ -334,187 +653,147 @@
           {/* MAIN CONTENT WORKSPACE */}
           <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
             
-            {/* TOP BAR / HEADER */}
+            {/* Top Workspace Header */}
             <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 sticky top-0 z-10 shadow-sm">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 capitalize flex items-center gap-2">
                   {activeTab.replace('-', ' ')}
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium border border-slate-200">
-                    Java App View
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium border border-slate-200">
+                    RBAC Protected View
                   </span>
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5">Smart Campus Integrated Management System Controller</p>
+                <p className="text-xs text-slate-500 mt-0.5">Smart Campus Integrated Controller • Logged in as <span className="font-semibold text-slate-700">{currentUser.role}</span></p>
               </div>
 
               <div className="flex items-center space-x-3">
-                {/* Global Search */}
+                {/* Global Search Input */}
                 <div className="relative w-full sm:w-64">
                   <Icon name="search" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Search resources, users, logs..."
+                    placeholder="Search records, categories..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
                   />
                 </div>
+
+                {/* Logout Button in Header */}
+                <button
+                  onClick={handleLogout}
+                  className="px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-600 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 border border-slate-200"
+                >
+                  <Icon name="log-out" className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Logout</span>
+                </button>
               </div>
             </header>
 
-            {/* DASHBOARD CONTENT CONTAINER */}
+            {/* TAB CONTAINER */}
             <div className="p-6 space-y-6 max-w-7xl mx-auto w-full">
               
-              {/* 1. OVERVIEW DASHBOARD */}
+              {/* TAB 1: OVERVIEW DASHBOARD */}
               {activeTab === 'dashboard' && (
-                <div className="space-y-6">
-                  {/* Architecture Highlight Banner */}
-                  <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-slate-800 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
-                    <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 bg-repeat pointer-events-none" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
+                <div className="space-y-6 animate-fade-in">
+                  
+                  {/* Banner */}
+                  <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
                     <div className="max-w-2xl relative z-10">
-                      <span className="px-3 py-1 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-xs font-semibold rounded-full uppercase tracking-wider">System Architecture Online</span>
-                      <h3 className="text-2xl font-bold mt-3 text-white">Smart Campus Integrated Management System</h3>
-                      <p className="text-slate-300 text-sm mt-2 leading-relaxed">
-                        Powered by a menu-driven Java architecture with OOP principles, Collections & Streams processing, and JDBC database persistency layer.
+                      <div className="flex items-center space-x-2 mb-3">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${currentUser.badgeColor}`}>
+                          Session Role: {currentUser.role}
+                        </span>
+                        <span className="text-xs text-slate-400">• Authenticated Session</span>
+                      </div>
+                      <h3 className="text-2xl font-bold text-white">Welcome, {currentUser.name}!</h3>
+                      <p className="text-slate-300 text-xs mt-2 leading-relaxed">
+                        You have entered the Smart Campus management workspace with <strong className="text-white">{currentUser.role} permissions</strong>. Action triggers and configuration menus across all tabs are restricted accordingly.
                       </p>
-                      <div className="mt-4 flex flex-wrap gap-3">
-                        <button onClick={() => setActiveTab('bookings')} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition-all shadow-md">
-                          Launch Booking System
+                      <div className="mt-4 flex flex-wrap gap-2.5">
+                        <button onClick={() => setActiveTab('bookings')} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition-all shadow-md flex items-center gap-1.5">
+                          <Icon name="clock" className="w-3.5 h-3.5" />
+                          <span>Resource Booking Console</span>
                         </button>
-                        <button onClick={() => setActiveTab('architecture')} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold rounded-lg transition-all">
-                          View Java Diagram Spec
-                        </button>
+                        {permissions.viewAllTabs && (
+                          <button onClick={() => setActiveTab('architecture')} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5">
+                            <Icon name="code" className="w-3.5 h-3.5" />
+                            <span>Java Architecture Diagram</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Functional Summary Cards */}
+                  {/* Operational Summary Grid */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                    {/* Student Blue Card */}
-                    <div 
-                      onClick={() => setActiveTab('students')}
-                      className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group"
-                    >
+                    <div onClick={() => setActiveTab('students')} className="bg-blue-50/70 border border-blue-200 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group">
                       <div className="flex justify-between items-start">
-                        <div className="p-2 bg-blue-500 text-white rounded-lg shadow-sm group-hover:scale-105 transition-transform">
-                          <Icon name="users" className="w-5 h-5" />
-                        </div>
-                        <span className="text-xs font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">Active</span>
+                        <div className="p-2 bg-blue-500 text-white rounded-lg shadow-sm"><Icon name="users" className="w-4 h-4" /></div>
+                        <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">Enrolled</span>
                       </div>
-                      <p className="text-2xl font-bold text-slate-800 mt-3">{students.length}</p>
-                      <p className="text-xs font-medium text-slate-600">Student Records</p>
-                      <div className="mt-3 pt-2 border-t border-blue-100 flex items-center justify-between text-[11px] text-blue-700 font-medium">
-                        <span>Add, View, Search, Update</span>
-                        <Icon name="chevron-right" className="w-3 h-3" />
-                      </div>
+                      <p className="text-2xl font-bold text-slate-800 mt-2">{students.length}</p>
+                      <p className="text-xs text-slate-600 font-medium">Students</p>
                     </div>
 
-                    {/* Faculty Red/Pink Card */}
-                    <div 
-                      onClick={() => setActiveTab('faculty')}
-                      className="bg-rose-50/70 border border-rose-200/80 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group"
-                    >
+                    <div onClick={() => setActiveTab('faculty')} className="bg-rose-50/70 border border-rose-200 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group">
                       <div className="flex justify-between items-start">
-                        <div className="p-2 bg-rose-500 text-white rounded-lg shadow-sm group-hover:scale-105 transition-transform">
-                          <Icon name="user-check" className="w-5 h-5" />
-                        </div>
-                        <span className="text-xs font-semibold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">Faculty</span>
+                        <div className="p-2 bg-rose-500 text-white rounded-lg shadow-sm"><Icon name="user-check" className="w-4 h-4" /></div>
+                        <span className="text-[10px] font-semibold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">Instructors</span>
                       </div>
-                      <p className="text-2xl font-bold text-slate-800 mt-3">{faculty.length}</p>
-                      <p className="text-xs font-medium text-slate-600">Faculty Members</p>
-                      <div className="mt-3 pt-2 border-t border-rose-100 flex items-center justify-between text-[11px] text-rose-700 font-medium">
-                        <span>Add, View, Search, Update</span>
-                        <Icon name="chevron-right" className="w-3 h-3" />
-                      </div>
+                      <p className="text-2xl font-bold text-slate-800 mt-2">{faculty.length}</p>
+                      <p className="text-xs text-slate-600 font-medium">Faculty Members</p>
                     </div>
 
-                    {/* Course Yellow Card */}
-                    <div 
-                      onClick={() => setActiveTab('courses')}
-                      className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group"
-                    >
+                    <div onClick={() => setActiveTab('courses')} className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group">
                       <div className="flex justify-between items-start">
-                        <div className="p-2 bg-amber-500 text-white rounded-lg shadow-sm group-hover:scale-105 transition-transform">
-                          <Icon name="book-open" className="w-5 h-5" />
-                        </div>
-                        <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">Curriculum</span>
+                        <div className="p-2 bg-amber-500 text-white rounded-lg shadow-sm"><Icon name="book-open" className="w-4 h-4" /></div>
+                        <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">Active</span>
                       </div>
-                      <p className="text-2xl font-bold text-slate-800 mt-3">{courses.length}</p>
-                      <p className="text-xs font-medium text-slate-600">Active Courses</p>
-                      <div className="mt-3 pt-2 border-t border-amber-100 flex items-center justify-between text-[11px] text-amber-700 font-medium">
-                        <span>Manage & Assignments</span>
-                        <Icon name="chevron-right" className="w-3 h-3" />
-                      </div>
+                      <p className="text-2xl font-bold text-slate-800 mt-2">{courses.length}</p>
+                      <p className="text-xs text-slate-600 font-medium">Courses</p>
                     </div>
 
-                    {/* Resource Cyan/Green Card */}
-                    <div 
-                      onClick={() => setActiveTab('resources')}
-                      className="bg-emerald-50/70 border border-emerald-200/80 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group"
-                    >
+                    <div onClick={() => setActiveTab('resources')} className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group">
                       <div className="flex justify-between items-start">
-                        <div className="p-2 bg-emerald-500 text-white rounded-lg shadow-sm group-hover:scale-105 transition-transform">
-                          <Icon name="flask-conical" className="w-5 h-5" />
-                        </div>
-                        <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">Facilities</span>
+                        <div className="p-2 bg-emerald-500 text-white rounded-lg shadow-sm"><Icon name="box" className="w-4 h-4" /></div>
+                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">Facilities</span>
                       </div>
-                      <p className="text-2xl font-bold text-slate-800 mt-3">{resources.length}</p>
-                      <p className="text-xs font-medium text-slate-600">Campus Facilities</p>
-                      <div className="mt-3 pt-2 border-t border-emerald-100 flex items-center justify-between text-[11px] text-emerald-700 font-medium">
-                        <span>Labs & Equipment</span>
-                        <Icon name="chevron-right" className="w-3 h-3" />
-                      </div>
+                      <p className="text-2xl font-bold text-slate-800 mt-2">{resources.length}</p>
+                      <p className="text-xs text-slate-600 font-medium">Campus Resources</p>
                     </div>
 
-                    {/* Activity Purple Card */}
-                    <div 
-                      onClick={() => setActiveTab('activities')}
-                      className="bg-purple-50/70 border border-purple-200/80 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group"
-                    >
+                    <div onClick={() => setActiveTab('activities')} className="bg-purple-50/70 border border-purple-200 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group">
                       <div className="flex justify-between items-start">
-                        <div className="p-2 bg-purple-500 text-white rounded-lg shadow-sm group-hover:scale-105 transition-transform">
-                          <Icon name="calendar" className="w-5 h-5" />
-                        </div>
-                        <span className="text-xs font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">Events</span>
+                        <div className="p-2 bg-purple-500 text-white rounded-lg shadow-sm"><Icon name="calendar" className="w-4 h-4" /></div>
+                        <span className="text-[10px] font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">Scheduled</span>
                       </div>
-                      <p className="text-2xl font-bold text-slate-800 mt-3">{activities.length}</p>
-                      <p className="text-xs font-medium text-slate-600">Campus Events</p>
-                      <div className="mt-3 pt-2 border-t border-purple-100 flex items-center justify-between text-[11px] text-purple-700 font-medium">
-                        <span>Schedule & Details</span>
-                        <Icon name="chevron-right" className="w-3 h-3" />
-                      </div>
+                      <p className="text-2xl font-bold text-slate-800 mt-2">{activities.length}</p>
+                      <p className="text-xs text-slate-600 font-medium">Campus Events</p>
                     </div>
                   </div>
 
-                  {/* Quick Status / Quick Actions */}
+                  {/* Resource Matrix & RBAC Notice */}
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    
-                    {/* Realtime Resource Status */}
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
                       <div className="flex justify-between items-center mb-4">
-                        <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                        <h4 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
                           <Icon name="clock" className="w-4 h-4 text-orange-500" />
-                          Live Resource Booking & Availability Matrix
+                          Facility & Equipment Realtime Availability Status
                         </h4>
-                        <button 
-                          onClick={() => setActiveTab('bookings')} 
-                          className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
-                        >
-                          Open Booking Console →
-                        </button>
                       </div>
-                      <div className="space-y-3">
+                      <div className="space-y-2.5">
                         {resources.map((res) => (
-                          <div key={res.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
+                          <div key={res.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100 text-xs">
                             <div className="flex items-center space-x-3">
                               <div className={`w-2.5 h-2.5 rounded-full ${
                                 res.status === 'Available' ? 'bg-emerald-500' : res.status === 'Occupied' ? 'bg-amber-500' : 'bg-rose-500'
                               }`} />
                               <div>
-                                <p className="text-sm font-semibold text-slate-800">{res.name}</p>
-                                <p className="text-xs text-slate-500">{res.category} • Cap: {res.capacity} people</p>
+                                <p className="font-bold text-slate-800">{res.name}</p>
+                                <p className="text-slate-500">{res.category} • Capacity: {res.capacity} people</p>
                               </div>
                             </div>
-                            <span className={`px-2.5 py-1 text-xs rounded-full font-medium ${
+                            <span className={`px-2.5 py-0.5 text-[10px] rounded-full font-bold ${
                               res.status === 'Available' ? 'bg-emerald-100 text-emerald-700' : 
                               res.status === 'Occupied' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'
                             }`}>
@@ -525,174 +804,208 @@
                       </div>
                     </div>
 
-                    {/* Quick CRUD & Controls */}
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
-                      <div>
-                        <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-                          <Icon name="database" className="w-4 h-4 text-indigo-600" />
-                          System Operations
-                        </h4>
-                        <p className="text-xs text-slate-500 mb-4">Quick triggers mapped to JDBC CRUD functions and data structures.</p>
-                        <div className="space-y-2">
-                          <button 
-                            onClick={() => { setActiveTab('students'); setModalType('addStudent'); }}
-                            className="w-full py-2.5 px-3 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors flex items-center justify-between"
-                          >
-                            <span>+ Add New Student Record</span>
-                            <Icon name="plus" className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => { setActiveTab('faculty'); setModalType('addFaculty'); }}
-                            className="w-full py-2.5 px-3 bg-rose-50 text-rose-700 rounded-lg text-xs font-semibold hover:bg-rose-100 transition-colors flex items-center justify-between"
-                          >
-                            <span>+ Register Faculty Member</span>
-                            <Icon name="plus" className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => setActiveTab('bookings')}
-                            className="w-full py-2.5 px-3 bg-orange-50 text-orange-700 rounded-lg text-xs font-semibold hover:bg-orange-100 transition-colors flex items-center justify-between"
-                          >
-                            <span>Test Conflict Detector</span>
-                            <Icon name="alert-circle" className="w-4 h-4" />
-                          </button>
+                    {/* RBAC Privilege Matrix Overview */}
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                      <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2 text-sm">
+                        <Icon name="shield-check" className="w-4 h-4 text-indigo-600" />
+                        Privilege Matrix Matrix
+                      </h4>
+                      <p className="text-xs text-slate-500 mb-4">Actions enabled for <strong className="text-indigo-600">{currentUser.role}</strong> tier:</p>
+                      
+                      <div className="space-y-2 text-xs">
+                        <div className="flex items-center justify-between p-2 rounded bg-slate-50">
+                          <span className="text-slate-600">Add / Delete Students</span>
+                          <span className={`font-bold ${permissions.canAddStudent ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {permissions.canAddStudent ? '✓ Enabled' : '✕ Restricted'}
+                          </span>
                         </div>
-                      </div>
-                      <div className="mt-6 pt-4 border-t border-slate-100">
-                        <div className="flex items-center justify-between text-xs text-slate-500">
-                          <span>JDBC Database Connection</span>
-                          <span className="text-emerald-600 font-semibold flex items-center gap-1">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Connected
+
+                        <div className="flex items-center justify-between p-2 rounded bg-slate-50">
+                          <span className="text-slate-600">Register Faculty</span>
+                          <span className={`font-bold ${permissions.canAddFaculty ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {permissions.canAddFaculty ? '✓ Enabled' : '✕ Restricted'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between p-2 rounded bg-slate-50">
+                          <span className="text-slate-600">Create Courses</span>
+                          <span className={`font-bold ${permissions.canAddCourse ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {permissions.canAddCourse ? '✓ Enabled' : '✕ Restricted'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between p-2 rounded bg-slate-50">
+                          <span className="text-slate-600">Approve Bookings</span>
+                          <span className={`font-bold ${permissions.canApproveBookings ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {permissions.canApproveBookings ? '✓ Enabled' : '✕ Restricted'}
                           </span>
                         </div>
                       </div>
                     </div>
-
                   </div>
+
                 </div>
               )}
 
-              {/* 2. STUDENT MANAGEMENT MODULE */}
+              {/* TAB 2: STUDENTS */}
               {activeTab === 'students' && (
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-slate-200">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 bg-blue-100 text-blue-700 rounded-lg">
-                        <Icon name="users" className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-slate-800">Student Directory & CRUD</h3>
-                        <p className="text-xs text-slate-500">Add, View, Search, Update student database records</p>
-                      </div>
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in">
+                  <div className="p-5 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-base">Student Directory</h3>
+                      <p className="text-xs text-slate-500">Academic records & enrolment roster</p>
                     </div>
-                    {(currentRole === 'Admin' || currentRole === 'Staff') && (
-                      <button
-                        onClick={() => setModalType('addStudent')}
-                        className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
+
+                    {permissions.canAddStudent ? (
+                      <button 
+                        onClick={() => setModalType('addStudent')} 
+                        className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm"
                       >
-                        <Icon name="plus" className="w-4 h-4" /> Add Student Record
+                        <Icon name="plus" className="w-3.5 h-3.5" />
+                        <span>Add Student Record</span>
                       </button>
+                    ) : (
+                      <span className="text-xs text-slate-400 italic bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                        🔒 Read-Only Mode ({currentUser.role})
+                      </span>
                     )}
                   </div>
 
-                  {/* Data Table */}
-                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs text-slate-600">
-                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold uppercase tracking-wider">
-                          <tr>
-                            <th className="p-3.5">ID</th>
-                            <th className="p-3.5">Student Name</th>
-                            <th className="p-3.5">Department</th>
-                            <th className="p-3.5">Academic Year</th>
-                            <th className="p-3.5">GPA</th>
-                            <th className="p-3.5">Status</th>
-                            <th className="p-3.5 text-right">Actions</th>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200">
+                        <tr>
+                          <th className="px-6 py-3">ID</th>
+                          <th className="px-6 py-3">Student Name</th>
+                          <th className="px-6 py-3">Department</th>
+                          <th className="px-6 py-3">Year</th>
+                          <th className="px-6 py-3">GPA</th>
+                          <th className="px-6 py-3">Status</th>
+                          {permissions.canDeleteStudent && <th className="px-6 py-3 text-right">Actions</th>}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredStudents.map(s => (
+                          <tr key={s.id} className="hover:bg-slate-50">
+                            <td className="px-6 py-3.5 font-mono font-bold text-indigo-600">{s.id}</td>
+                            <td className="px-6 py-3.5 font-semibold text-slate-900">{s.name}<span className="block text-[11px] font-normal text-slate-400">{s.email}</span></td>
+                            <td className="px-6 py-3.5 text-slate-600">{s.department}</td>
+                            <td className="px-6 py-3.5 text-slate-600">{s.year}</td>
+                            <td className="px-6 py-3.5 font-bold text-slate-800">{s.gpa}</td>
+                            <td className="px-6 py-3.5"><span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-bold text-[10px]">{s.status}</span></td>
+                            {permissions.canDeleteStudent && (
+                              <td className="px-6 py-3.5 text-right">
+                                <button 
+                                  onClick={() => handleDeleteStudent(s.id)}
+                                  className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50 transition-colors"
+                                  title="Delete Student"
+                                >
+                                  <Icon name="trash-2" className="w-4 h-4" />
+                                </button>
+                              </td>
+                            )}
                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {students
-                            .filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.department.toLowerCase().includes(searchQuery.toLowerCase()))
-                            .map((st) => (
-                              <tr key={st.id} className="hover:bg-slate-50/80 transition-colors">
-                                <td className="p-3.5 font-medium text-blue-600">{st.id}</td>
-                                <td className="p-3.5">
-                                  <p className="font-semibold text-slate-800">{st.name}</p>
-                                  <p className="text-[11px] text-slate-400">{st.email}</p>
-                                </td>
-                                <td className="p-3.5">{st.department}</td>
-                                <td className="p-3.5">{st.year}</td>
-                                <td className="p-3.5 font-semibold text-slate-700">{st.gpa}</td>
-                                <td className="p-3.5">
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                    st.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
-                                  }`}>
-                                    {st.status}
-                                  </span>
-                                </td>
-                                <td className="p-3.5 text-right space-x-2">
-                                  <button className="p-1 hover:bg-slate-100 text-slate-600 rounded" title="Edit Record">
-                                    <Icon name="edit" className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button 
-                                    onClick={() => setStudents(students.filter(s => s.id !== st.id))}
-                                    className="p-1 hover:bg-rose-50 text-rose-600 rounded" 
-                                    title="Delete Record"
-                                  >
-                                    <Icon name="trash-2" className="w-3.5 h-3.5" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}
 
-              {/* 3. FACULTY MANAGEMENT MODULE */}
+              {/* TAB 3: FACULTY */}
               {activeTab === 'faculty' && (
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-slate-200">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 bg-rose-100 text-rose-700 rounded-lg">
-                        <Icon name="user-check" className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-slate-800">Faculty Records & Management</h3>
-                        <p className="text-xs text-slate-500">Track faculty members, departments, and academic specializations</p>
-                      </div>
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in">
+                  <div className="p-5 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-base">Faculty Directory</h3>
+                      <p className="text-xs text-slate-500">Professors, instructors, and research specializations</p>
                     </div>
-                    {(currentRole === 'Admin' || currentRole === 'Staff') && (
-                      <button
-                        onClick={() => setModalType('addFaculty')}
-                        className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
+
+                    {permissions.canAddFaculty ? (
+                      <button 
+                        onClick={() => setModalType('addFaculty')} 
+                        className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm"
                       >
-                        <Icon name="plus" className="w-4 h-4" /> Register Faculty
+                        <Icon name="plus" className="w-3.5 h-3.5" />
+                        <span>Register Faculty</span>
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-400 italic bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                        🔒 Read-Only Mode ({currentUser.role})
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200">
+                        <tr>
+                          <th className="px-6 py-3">ID</th>
+                          <th className="px-6 py-3">Faculty Name</th>
+                          <th className="px-6 py-3">Department</th>
+                          <th className="px-6 py-3">Designation</th>
+                          <th className="px-6 py-3">Specialization</th>
+                          {permissions.canDeleteFaculty && <th className="px-6 py-3 text-right">Actions</th>}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredFaculty.map(f => (
+                          <tr key={f.id} className="hover:bg-slate-50">
+                            <td className="px-6 py-3.5 font-mono font-bold text-rose-600">{f.id}</td>
+                            <td className="px-6 py-3.5 font-semibold text-slate-900">{f.name}<span className="block text-[11px] font-normal text-slate-400">{f.email}</span></td>
+                            <td className="px-6 py-3.5 text-slate-600">{f.department}</td>
+                            <td className="px-6 py-3.5 font-medium text-rose-700">{f.designation}</td>
+                            <td className="px-6 py-3.5 text-slate-600">{f.specialization}</td>
+                            {permissions.canDeleteFaculty && (
+                              <td className="px-6 py-3.5 text-right">
+                                <button 
+                                  onClick={() => handleDeleteFaculty(f.id)}
+                                  className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50 transition-colors"
+                                >
+                                  <Icon name="trash-2" className="w-4 h-4" />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: COURSES */}
+              {activeTab === 'courses' && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4 animate-fade-in">
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-base">Course Curriculum Catalog</h3>
+                      <p className="text-xs text-slate-500">Active academic courses and module details</p>
+                    </div>
+
+                    {permissions.canAddCourse && (
+                      <button 
+                        onClick={() => setModalType('addCourse')} 
+                        className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm"
+                      >
+                        <Icon name="plus" className="w-3.5 h-3.5" />
+                        <span>Add Course</span>
                       </button>
                     )}
                   </div>
 
-                  {/* Faculty Grid Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {faculty.map((f) => (
-                      <div key={f.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:border-rose-300 transition-all">
-                        <div className="flex justify-between items-start mb-3">
-                          <div>
-                            <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider bg-rose-50 px-2 py-0.5 rounded border border-rose-100">
-                              {f.id}
-                            </span>
-                            <h4 className="font-bold text-slate-800 text-base mt-1">{f.name}</h4>
-                            <p className="text-xs text-slate-500">{f.designation}</p>
-                          </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {courses.map(c => (
+                      <div key={c.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-white hover:border-amber-300 transition-all shadow-sm">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="font-mono text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">{c.id}</span>
+                          <span className="text-[11px] font-semibold text-slate-500">{c.credits} Credits</span>
                         </div>
-                        <div className="space-y-2 text-xs text-slate-600 border-t border-slate-100 pt-3">
-                          <p><span className="font-semibold text-slate-700">Department:</span> {f.department}</p>
-                          <p><span className="font-semibold text-slate-700">Specialization:</span> {f.specialization}</p>
-                          <p><span className="font-semibold text-slate-700">Contact:</span> {f.email}</p>
-                        </div>
-                        <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end space-x-2">
-                          <button className="px-2.5 py-1 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded">Update Profile</button>
+                        <h4 className="font-bold text-slate-900 text-sm">{c.title}</h4>
+                        <p className="text-xs text-slate-500 mt-1">Instructor: {c.faculty}</p>
+                        <div className="mt-4 pt-3 border-t border-slate-200/80 flex justify-between text-xs text-slate-600">
+                          <span>Enrolled: <strong className="text-slate-800">{c.enrolled}</strong></span>
+                          <span className="text-indigo-600 font-bold">{c.assignments} Assignments</span>
                         </div>
                       </div>
                     ))}
@@ -700,323 +1013,160 @@
                 </div>
               )}
 
-              {/* 4. COURSE MANAGEMENT MODULE */}
-              {activeTab === 'courses' && (
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-slate-200">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 bg-amber-100 text-amber-700 rounded-lg">
-                        <Icon name="book-open" className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-slate-800">Course & Curriculum Catalog</h3>
-                        <p className="text-xs text-slate-500">Manage ongoing courses, assignments, and curriculum updates</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                    {courses.map((c) => (
-                      <div key={c.id} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
-                        <div>
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                              {c.id}
-                            </span>
-                            <span className="text-xs text-slate-500 font-medium">{c.credits} Credits</span>
-                          </div>
-                          <h4 className="font-bold text-slate-800 text-base mb-1">{c.title}</h4>
-                          <p className="text-xs text-slate-500 mb-4">Instructor: {c.faculty}</p>
-                          
-                          <div className="bg-slate-50 rounded-lg p-3 space-y-2 text-xs text-slate-600 mb-4 border border-slate-100">
-                            <div className="flex justify-between">
-                              <span>Enrolled Students:</span>
-                              <span className="font-bold text-slate-800">{c.enrolled}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Active Assignments:</span>
-                              <span className="font-bold text-slate-800">{c.assignments}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <button className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all">
-                          Manage Course Content
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* 5. RESOURCE MANAGEMENT MODULE */}
+              {/* TAB 5: RESOURCES */}
               {activeTab === 'resources' && (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg">
-                        <Icon name="flask-conical" className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-slate-800">Classrooms, Labs & Equipment</h3>
-                        <p className="text-xs text-slate-500">Infrastructure directory and availability tracking</p>
-                      </div>
-                    </div>
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4 animate-fade-in">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">Facilities & Equipment Inventory</h3>
+                    <p className="text-xs text-slate-500">Smart campus physical and compute resources</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {resources.map((res) => (
-                      <div key={res.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-start">
+                    {resources.map(r => (
+                      <div key={r.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex justify-between items-center">
                         <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
-                              {res.category}
-                            </span>
-                            <span className="text-xs text-slate-400">ID: {res.id}</span>
-                          </div>
-                          <h4 className="font-bold text-slate-800 text-base">{res.name}</h4>
-                          <p className="text-xs text-slate-500 mt-1">Specs: {res.specs}</p>
-                          <p className="text-xs font-semibold text-slate-700 mt-2">Capacity: {res.capacity} Seats / Units</p>
+                          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded uppercase">{r.category}</span>
+                          <h4 className="font-bold text-slate-900 mt-1.5 text-sm">{r.name}</h4>
+                          <p className="text-xs text-slate-500 mt-0.5">Capacity: {r.capacity} • Specs: {r.specs}</p>
                         </div>
-                        <div className="flex flex-col items-end space-y-3">
-                          <span className={`px-2.5 py-1 text-xs rounded-full font-semibold ${
-                            res.status === 'Available' ? 'bg-emerald-100 text-emerald-700' :
-                            res.status === 'Occupied' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'
-                          }`}>
-                            {res.status}
-                          </span>
-                          <button 
-                            onClick={() => {
-                              setSelectedResource(res);
-                              setBookingDetails({ ...bookingDetails, resourceId: res.id });
-                              setActiveTab('bookings');
-                            }}
-                            className="text-xs bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg font-medium shadow-sm transition-all"
-                          >
-                            Book Resource
-                          </button>
-                        </div>
+                        <span className={`px-3 py-1 text-xs rounded-full font-bold ${
+                          r.status === 'Available' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          {r.status}
+                        </span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* 6. CAMPUS ACTIVITY MANAGEMENT MODULE */}
+              {/* TAB 6: ACTIVITIES */}
               {activeTab === 'activities' && (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 bg-purple-100 text-purple-700 rounded-lg">
-                        <Icon name="calendar" className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-slate-800">Campus Activity & Event Registry</h3>
-                        <p className="text-xs text-slate-500">Extracurriculars, workshops, and department events</p>
-                      </div>
-                    </div>
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4 animate-fade-in">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">Campus Activities & Events Schedule</h3>
+                    <p className="text-xs text-slate-500">Lectures, hackathons, and departmental cups</p>
                   </div>
 
                   <div className="space-y-3">
-                    {activities.map((act) => (
-                      <div key={act.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="flex items-start space-x-4">
-                          <div className="p-3 bg-purple-50 text-purple-700 rounded-xl text-center min-w-[70px] border border-purple-100">
-                            <span className="block text-xs uppercase font-bold text-purple-600">{act.date.split('-')[1]}</span>
-                            <span className="block text-xl font-extrabold leading-none">{act.date.split('-')[2]}</span>
-                          </div>
-                          <div>
-                            <h4 className="font-bold text-slate-800 text-base">{act.name}</h4>
-                            <p className="text-xs text-slate-500 mt-1">Organizer: {act.organizer} • Venue: <span className="font-semibold text-slate-700">{act.venue}</span></p>
-                            <p className="text-xs text-slate-400 mt-0.5">Time: {act.time}</p>
-                          </div>
+                    {activities.map(a => (
+                      <div key={a.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 flex justify-between items-center">
+                        <div>
+                          <span className="text-[10px] font-bold text-purple-800 bg-purple-100 px-2 py-0.5 rounded">{a.organizer}</span>
+                          <h4 className="font-bold text-slate-900 mt-1 text-sm">{a.name}</h4>
+                          <p className="text-xs text-slate-500 mt-1">📅 {a.date} at {a.time} • 📍 {a.venue}</p>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-semibold">
-                            {act.status}
-                          </span>
-                          <button className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 font-semibold rounded-lg text-slate-700">
-                            View Details
-                          </button>
-                        </div>
+                        <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs rounded-full font-bold">{a.status}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* 7. RESOURCE BOOKING SYSTEM MODULE */}
+              {/* TAB 7: BOOKING SYSTEM */}
               {activeTab === 'bookings' && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="lg:col-span-2 space-y-4">
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                      <h3 className="font-bold text-slate-800 text-lg mb-2 flex items-center gap-2">
-                        <Icon name="clock" className="w-5 h-5 text-orange-500" />
-                        Resource Booking Simulator
-                      </h3>
-                      <p className="text-xs text-slate-500 mb-6">
-                        Tests real-time state updates and simultaneous booking conflict handling for laboratories and auditoriums.
-                      </p>
-
-                      {bookingStatusMsg && (
-                        <div className={`p-4 rounded-xl mb-5 text-xs font-semibold flex items-center gap-2 ${
-                          bookingStatusMsg.type === 'error' ? 'bg-rose-50 border border-rose-200 text-rose-700' : 'bg-emerald-50 border border-emerald-200 text-emerald-700'
-                        }`}>
-                          {bookingStatusMsg.type === 'error' ? <Icon name="alert-circle" className="w-4 h-4" /> : <Icon name="check-circle" className="w-4 h-4" />}
-                          {bookingStatusMsg.text}
-                        </div>
-                      )}
-
-                      <form onSubmit={handleSimulateBooking} className="space-y-4">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">Select Facility / Resource</label>
-                          <select 
-                            value={bookingDetails.resourceId}
-                            onChange={(e) => setBookingDetails({ ...bookingDetails, resourceId: e.target.value })}
-                            required
-                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
-                          >
-                            <option value="">-- Choose Resource --</option>
-                            {resources.map(r => (
-                              <option key={r.id} value={r.id}>{r.name} ({r.status})</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">Booked By (User / Dept)</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. Dr. Robert Smith"
-                              value={bookingDetails.user}
-                              onChange={(e) => setBookingDetails({ ...bookingDetails, user: e.target.value })}
-                              required
-                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">Date</label>
-                            <input
-                              type="date"
-                              value={bookingDetails.date}
-                              onChange={(e) => setBookingDetails({ ...bookingDetails, date: e.target.value })}
-                              required
-                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
-                            />
-                          </div>
-                        </div>
-
-                        <button
-                          type="submit"
-                          className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2"
-                        >
-                          <Icon name="refresh-cw" className="w-4 h-4 animate-spin-slow" /> Confirm Reservation & Check Availability
-                        </button>
-                      </form>
-                    </div>
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 max-w-2xl mx-auto space-y-5 animate-fade-in">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">Resource Booking & Conflict Engine</h3>
+                    <p className="text-xs text-slate-500">Real-time slot reservation backed by Java availability verification</p>
                   </div>
 
-                  {/* Live Availability Sidebar */}
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                    <h4 className="font-bold text-slate-800 text-sm mb-4">Live Facility Matrix</h4>
-                    <div className="space-y-3">
-                      {resources.map(res => (
-                        <div key={res.id} className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex items-center justify-between">
-                          <div>
-                            <p className="text-xs font-bold text-slate-800">{res.name}</p>
-                            <p className="text-[10px] text-slate-500">{res.category}</p>
-                          </div>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            res.status === 'Available' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                          }`}>
-                            {res.status}
-                          </span>
-                        </div>
-                      ))}
+                  {bookingStatusMsg && (
+                    <div className={`p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                      bookingStatusMsg.type === 'success' ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-700' : 'bg-rose-500/10 border border-rose-500/30 text-rose-700'
+                    }`}>
+                      <Icon name={bookingStatusMsg.type === 'success' ? 'check-circle-2' : 'alert-circle'} className="w-4 h-4 flex-shrink-0" />
+                      <span>{bookingStatusMsg.text}</span>
                     </div>
-                  </div>
+                  )}
+
+                  <form onSubmit={handleSimulateBooking} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Target Facility / Equipment</label>
+                      <select 
+                        value={bookingDetails.resourceId} 
+                        onChange={(e) => setBookingDetails({...bookingDetails, resourceId: e.target.value})}
+                        required
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium"
+                      >
+                        <option value="">-- Select Resource --</option>
+                        {resources.map(r => (
+                          <option key={r.id} value={r.id}>{r.name} ({r.status})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Requester User Name</label>
+                      <input 
+                        type="text" 
+                        value={bookingDetails.user || currentUser.name}
+                        onChange={(e) => setBookingDetails({...bookingDetails, user: e.target.value})}
+                        required
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Booking Date</label>
+                      <input 
+                        type="date"
+                        value={bookingDetails.date}
+                        onChange={(e) => setBookingDetails({...bookingDetails, date: e.target.value})}
+                        required
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                      />
+                    </div>
+
+                    <button 
+                      type="submit" 
+                      className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-xs transition-all shadow-md flex items-center justify-center gap-2"
+                    >
+                      <Icon name="calendar-check" className="w-4 h-4" />
+                      <span>Submit Reservation Request</span>
+                    </button>
+                  </form>
                 </div>
               )}
 
-              {/* 8. JAVA TECHNICAL ARCHITECTURE OVERVIEW (MAPPED TO DIAGRAM) */}
-              {activeTab === 'architecture' && (
-                <div className="space-y-6">
-                  <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                    <h3 className="text-lg font-bold text-slate-900 mb-2 flex items-center gap-2">
-                      <Icon name="code" className="w-5 h-5 text-indigo-600" />
-                      Smart Campus Java System Blueprint Map
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      This map illustrates how the frontend components trigger underlying menu-driven Java architecture backend functions.
-                    </p>
+              {/* TAB 8: ARCHITECTURE SPEC BLUEPRINT */}
+              {activeTab === 'architecture' && permissions.viewAllTabs && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6 animate-fade-in">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">Java Application Architecture Spec</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Structural stack breakdown of Spring Security authentication & JDBC layer</p>
                   </div>
 
-                  {/* Interactive Layer Cards matching exact image structure */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    
-                    {/* Layer 1: OOP Concepts */}
-                    <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-5 shadow-sm">
-                      <div className="p-2 bg-purple-600 text-white rounded-lg w-fit mb-3">
-                        <Icon name="code" className="w-5 h-5" />
-                      </div>
-                      <h4 className="font-bold text-slate-800 text-sm mb-1">1. OOP Concepts</h4>
-                      <p className="text-xs text-slate-500 mb-3">Core Java Data Encapsulation & Structures</p>
-                      <ul className="text-xs space-y-1.5 text-slate-700 font-medium">
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-purple-600" /> Classes & Objects</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-purple-600" /> Constructors</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-purple-600" /> Inheritance</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-purple-600" /> Polymorphism</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-purple-600" /> Interfaces</li>
-                      </ul>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/40">
+                      <h4 className="font-bold text-blue-900 text-xs mb-1.5 flex items-center gap-2">
+                        <Icon name="shield" className="w-4 h-4 text-blue-600" />
+                        1. Spring Security / RBAC Tier
+                      </h4>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Evaluates user credentials, generates Session Tokens, and enforces `@PreAuthorize("hasRole('ADMIN')")` restrictions on API endpoints.
+                      </p>
                     </div>
 
-                    {/* Layer 2: Data Processing Layer */}
-                    <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-5 shadow-sm">
-                      <div className="p-2 bg-blue-600 text-white rounded-lg w-fit mb-3">
-                        <Icon name="layers" className="w-5 h-5" />
-                      </div>
-                      <h4 className="font-bold text-slate-800 text-sm mb-1">2. Data Processing Layer</h4>
-                      <p className="text-xs text-slate-500 mb-3">In-Memory Logic & Streams API</p>
-                      <ul className="text-xs space-y-1.5 text-slate-700 font-medium">
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-blue-600" /> Collections Framework</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-blue-600" /> Java Streams API</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-blue-600" /> Generics</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-blue-600" /> File Handling (I/O)</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-blue-600" /> Lambda Expressions</li>
-                      </ul>
+                    <div className="p-4 rounded-xl border border-indigo-200 bg-indigo-50/40">
+                      <h4 className="font-bold text-indigo-900 text-xs mb-1.5 flex items-center gap-2">
+                        <Icon name="cpu" className="w-4 h-4 text-indigo-600" />
+                        2. Domain Business Models
+                      </h4>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        POJO entities (`User`, `Student`, `Faculty`, `ResourceBooking`) wrapped with Java Collections filter logic & concurrent stream guards.
+                      </p>
                     </div>
 
-                    {/* Layer 3: JDBC & CRUD Operations */}
-                    <div className="bg-rose-50/70 border border-rose-200 rounded-xl p-5 shadow-sm">
-                      <div className="p-2 bg-rose-600 text-white rounded-lg w-fit mb-3">
-                        <Icon name="database" className="w-5 h-5" />
-                      </div>
-                      <h4 className="font-bold text-slate-800 text-sm mb-1">3. JDBC & CRUD Layer</h4>
-                      <p className="text-xs text-slate-500 mb-3">Database Persistency API</p>
-                      <ul className="text-xs space-y-1.5 text-slate-700 font-medium">
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-rose-600" /> DB Connection Driver</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-rose-600" /> INSERT Operations</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-rose-600" /> UPDATE Queries</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-rose-600" /> DELETE Statements</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-rose-600" /> RETRIEVE ResultSets</li>
-                      </ul>
+                    <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/40">
+                      <h4 className="font-bold text-emerald-900 text-xs mb-1.5 flex items-center gap-2">
+                        <Icon name="database" className="w-4 h-4 text-emerald-600" />
+                        3. Database Persistence
+                      </h4>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Relational MySQL schema driven via Spring Data JPA / JDBC repositories with foreign keys and ACID transactional integrity.
+                      </p>
                     </div>
-
-                    {/* Layer 4: Reports & Retrieval */}
-                    <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-5 shadow-sm">
-                      <div className="p-2 bg-emerald-600 text-white rounded-lg w-fit mb-3">
-                        <Icon name="file-text" className="w-5 h-5" />
-                      </div>
-                      <h4 className="font-bold text-slate-800 text-sm mb-1">4. Reports & Retrieval</h4>
-                      <p className="text-xs text-slate-500 mb-3">Output Generation & Export</p>
-                      <ul className="text-xs space-y-1.5 text-slate-700 font-medium">
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-emerald-600" /> View Analytics</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-emerald-600" /> Multi-criteria Search</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-emerald-600" /> Generate Performance Reports</li>
-                        <li className="flex items-center gap-1.5"><Icon name="check" className="w-3.5 h-3.5 text-emerald-600" /> Audit Logging</li>
-                      </ul>
-                    </div>
-
                   </div>
                 </div>
               )}
@@ -1024,116 +1174,82 @@
             </div>
           </main>
 
-          {/* --- MODAL FORMS FOR CREATING RECORDS --- */}
-          {modalType === 'addStudent' && (
-            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-100">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-bold text-slate-800 text-base">Add New Student Record</h3>
-                  <button onClick={() => setModalType(null)} className="p-1 text-slate-400 hover:text-slate-600">
-                    <Icon name="x" className="w-5 h-5" />
-                  </button>
+          {/* MODALS FOR ADDING RECORDS */}
+          {modalType && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 animate-fade-in">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    {modalType === 'addStudent' && 'Register New Student'}
+                    {modalType === 'addFaculty' && 'Register New Faculty Member'}
+                    {modalType === 'addCourse' && 'Create New Course Module'}
+                  </h3>
+                  <button onClick={() => setModalType(null)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
                 </div>
-                <form onSubmit={handleAddStudent} className="space-y-3 text-xs">
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Full Name</label>
-                    <input 
-                      type="text" required 
-                      placeholder="e.g. Jordan Lee" 
-                      value={newStudent.name}
-                      onChange={(e) => setNewStudent({...newStudent, name: e.target.value})}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Email</label>
-                    <input 
-                      type="email" required 
-                      placeholder="jordan.l@campus.edu" 
-                      value={newStudent.email}
-                      onChange={(e) => setNewStudent({...newStudent, email: e.target.value})}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
+
+                {modalType === 'addStudent' && (
+                  <form onSubmit={handleAddStudent} className="space-y-3">
                     <div>
-                      <label className="block font-semibold text-slate-700 mb-1">Department</label>
-                      <select 
-                        value={newStudent.department}
-                        onChange={(e) => setNewStudent({...newStudent, department: e.target.value})}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
-                      >
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Student Full Name</label>
+                      <input type="text" required value={newStudent.name} onChange={(e) => setNewStudent({...newStudent, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+                      <input type="email" required value={newStudent.email} onChange={(e) => setNewStudent({...newStudent, email: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
+                      <select value={newStudent.department} onChange={(e) => setNewStudent({...newStudent, department: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs">
                         <option>Computer Science</option>
                         <option>Electrical Eng.</option>
                         <option>Mechanical Eng.</option>
                         <option>Biotechnology</option>
                       </select>
                     </div>
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">GPA</label>
-                      <input 
-                        type="text" required 
-                        value={newStudent.gpa}
-                        onChange={(e) => setNewStudent({...newStudent, gpa: e.target.value})}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
-                      />
+                    <div className="flex justify-end space-x-2 pt-3">
+                      <button type="button" onClick={() => setModalType(null)} className="px-4 py-2 border rounded-lg text-xs font-semibold">Cancel</button>
+                      <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold">Save Student Record</button>
                     </div>
-                  </div>
-                  <div className="pt-3 flex justify-end space-x-2">
-                    <button type="button" onClick={() => setModalType(null)} className="px-4 py-2 bg-slate-100 font-semibold rounded-lg text-slate-600">Cancel</button>
-                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-sm">Save to DB</button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
+                  </form>
+                )}
 
-          {modalType === 'addFaculty' && (
-            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-100">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-bold text-slate-800 text-base">Register Faculty Member</h3>
-                  <button onClick={() => setModalType(null)} className="p-1 text-slate-400 hover:text-slate-600">
-                    <Icon name="x" className="w-5 h-5" />
-                  </button>
-                </div>
-                <form onSubmit={handleAddFaculty} className="space-y-3 text-xs">
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Faculty Name & Title</label>
-                    <input 
-                      type="text" required 
-                      placeholder="e.g. Dr. Sarah Jenkins" 
-                      value={newFaculty.name}
-                      onChange={(e) => setNewFaculty({...newFaculty, name: e.target.value})}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Email</label>
-                    <input 
-                      type="email" required 
-                      placeholder="s.jenkins@campus.edu" 
-                      value={newFaculty.email}
-                      onChange={(e) => setNewFaculty({...newFaculty, email: e.target.value})}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Specialization</label>
-                    <input 
-                      type="text" required 
-                      placeholder="e.g. Distributed Systems" 
-                      value={newFaculty.specialization}
-                      onChange={(e) => setNewFaculty({...newFaculty, specialization: e.target.value})}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
-                    />
-                  </div>
-                  <div className="pt-3 flex justify-end space-x-2">
-                    <button type="button" onClick={() => setModalType(null)} className="px-4 py-2
-		    bg-slate-100 font-semibold rounded-lg text-slate-600">Cancel</button>
-                    <button type="submit" className="px-4 py-2 bg-rose-600 text-white font-semibold rounded-lg shadow-sm">Save Faculty</button>
-                  </div>
-                </form>
+                {modalType === 'addFaculty' && (
+                  <form onSubmit={handleAddFaculty} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Faculty Name</label>
+                      <input type="text" required value={newFaculty.name} onChange={(e) => setNewFaculty({...newFaculty, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+                      <input type="email" required value={newFaculty.email} onChange={(e) => setNewFaculty({...newFaculty, email: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Specialization</label>
+                      <input type="text" required value={newFaculty.specialization} onChange={(e) => setNewFaculty({...newFaculty, specialization: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div className="flex justify-end space-x-2 pt-3">
+                      <button type="button" onClick={() => setModalType(null)} className="px-4 py-2 border rounded-lg text-xs font-semibold">Cancel</button>
+                      <button type="submit" className="px-4 py-2 bg-rose-600 text-white rounded-lg text-xs font-semibold">Save Faculty</button>
+                    </div>
+                  </form>
+                )}
+
+                {modalType === 'addCourse' && (
+                  <form onSubmit={handleAddCourse} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Course Code (e.g. CS401)</label>
+                      <input type="text" required value={newCourse.id} onChange={(e) => setNewCourse({...newCourse, id: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Course Title</label>
+                      <input type="text" required value={newCourse.title} onChange={(e) => setNewCourse({...newCourse, title: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div className="flex justify-end space-x-2 pt-3">
+                      <button type="button" onClick={() => setModalType(null)} className="px-4 py-2 border rounded-lg text-xs font-semibold">Cancel</button>
+                      <button type="submit" className="px-4 py-2 bg-amber-600 text-white rounded-lg text-xs font-semibold">Save Course</button>
+                    </div>
+                  </form>
+                )}
               </div>
             </div>
           )}
@@ -1142,9 +1258,7 @@
       );
     }
 
-    const rootElement = document.getElementById('root');
-    const root = ReactDOM.createRoot(rootElement);
-    root.render(<App />);
+    ReactDOM.render(<App />, document.getElementById('root'));
   </script>
 </body>
 </html>
